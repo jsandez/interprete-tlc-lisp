@@ -72,6 +72,7 @@
 (declare symbol-to-lowercase)
 (declare all-to-lowercase)
 (declare null?)
+(declare evaluar-until-nil)
 
 (defn -main
   [& args]
@@ -301,6 +302,7 @@
     (igual? fnc 'first)     (fnc-first lae)
     (igual? fnc 'append)     (fnc-append lae)
     (igual? fnc 'length)     (fnc-length lae)
+    (igual? fnc 'env)     (fnc-env lae amb-global amb-local)
     :else (list '*error* 'non-applicable-type fnc)))
 
 
@@ -445,6 +447,14 @@
   (let [lower-x (clojure.string/lower-case (str x))]
     (or (= "nil" lower-x) (= "()" lower-x) (= "" lower-x))))
 
+(defn evaluar-until-nil [l amb-global amb-local]
+  (cond
+    (empty? l) (list nil amb-global)
+    :else (let [eval (evaluar (first l) amb-global amb-local)]
+            (if (not (igual? (first eval) nil))
+              eval
+              (evaluar-until-nil (rest l) (second eval) amb-local)))))
+
 ; FUNCIONES QUE DEBEN SER IMPLEMENTADAS PARA COMPLETAR EL INTERPRETE DE TLC-LISP (ADEMAS DE COMPLETAR 'EVALUAR' Y 'APLICAR-FUNCION-PRIMITIVA'):
 
 ;;Si la longitud de una lista dada es la esperada, devuelve esa longitud.
@@ -472,7 +482,7 @@
 
 ;;Devuelve true o false, segun sea o no el arg. un mensaje de error (una lista con *error* como primer elemento).
 (defn error? [l]
-  (if (list? l) (igual? (first l) '*error*) false))
+  (if (seq? l) (igual? (first l) '*error*) false))
 
 ;;Si la lista es un mensaje de error, lo devuelve; si no, devuelve nil.
 (defn revisar-fnc [l]
@@ -516,7 +526,7 @@
 ;;Devuelve la fusion de los ambientes global y local.
 (defn fnc-env [l a b]
   (cond
-    (empty? l) (concat a b)
+    (igual? l nil) (concat a b)
     :else (list '*error* 'too-many-args)))
 
 ;;Compara 2 elementos. Si son iguales, devuelve t. Si no, nil.
@@ -601,7 +611,7 @@
   (let [param (second (rest de))
         fun (second de)]
     (cond
-      (not (list? param)) (list (list '*error* 'list 'expected param) amb)
+      (not (seq? param)) (list (list '*error* 'list 'expected param) amb)
       (igual? nil fun) (list (list '*error* 'cannot-set fun) amb)
       (not (symbol? fun)) (list (list '*error* 'symbol 'expected fun) amb)
       :else (let [body (rest (rest de))
@@ -621,14 +631,6 @@
       (error? (first evaluation)) evaluation
       (igual? nil (first evaluation)) (evaluar f-side amb-global amb-local)
       :else (evaluar t-side amb-global amb-local))))
-
-(defn evaluar-until-nil[l amb-global amb-local] 
-  (cond
-    (empty? l) (list nil amb-global)
-    :else (let [eval (evaluar (first l) amb-global amb-local)]
-            (if (not (igual? (first eval) nil)) 
-              eval
-              (evaluar-until-nil (rest l) (second eval) amb-local)))))
 
 ;;Evalua una forma 'or'. Devuelve una lista con el resultado y un ambiente.
 (defn evaluar-or [expre amb-global amb-local]

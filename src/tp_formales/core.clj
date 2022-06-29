@@ -69,6 +69,9 @@
 (declare map-to-amb)
 (declare modify-env)
 (declare new-env)
+(declare symbol-to-lowercase)
+(declare all-to-lowercase)
+(declare null?)
 
 (defn -main
   [& args]
@@ -133,11 +136,10 @@
       (igual? (first expre) 'lambda)     (evaluar-lambda expre amb-global amb-local)
       (igual? (first expre) 'eval)     (evaluar-eval expre amb-global amb-local)
       :else (let [res-eval-1 (evaluar (first expre) amb-global amb-local),
-                  res-eval-2 (reduce (fn [x y] 
-                                       (let [res-eval-3 (evaluar y (first x) amb-local)] 
-                                         (cons (second res-eval-3) 
-                                               (concat (next x) (list (first res-eval-3)))))
-                                       ) (cons (list (second res-eval-1)) (next expre)))]
+                  res-eval-2 (reduce (fn [x y]
+                                       (let [res-eval-3 (evaluar y (first x) amb-local)]
+                                         (cons (second res-eval-3)
+                                               (concat (next x) (list (first res-eval-3)))))) (cons (list (second res-eval-1)) (next expre)))]
               (aplicar (first res-eval-1) (next res-eval-2) (first res-eval-2) amb-local)))))
 
 
@@ -278,7 +280,7 @@
   [fnc lae amb-global amb-local]
   (cond
     ; Las funciones primitivas reciben argumentos y retornan un valor (son puras)
-    (igual? fnc 'add)     (fnc-add lae)
+    (igual? fnc 'add)    (fnc-add lae)
     (igual? fnc '+)     (fnc-add lae)
     (igual? fnc 'sub)     (fnc-sub lae)
     (igual? fnc '-)     (fnc-sub lae)
@@ -310,7 +312,6 @@
       (seq? ari) ari
       (or (seq? (second lae)) (igual? (second lae) nil)) (cons (first lae) (second lae))
       :else (list '*error* 'not-implemented))))
-
 
 (defn fnc-first
   "Devuelve el primer elemento de una lista."
@@ -401,6 +402,48 @@
      (do (prn) (flush) orig)
      (do (pr (first lis)) (print " ") (imprimir (next lis) orig)))))
 
+; FUNCIONES AUXILIARES
+(defn symbol-to-lowercase [x]
+  (cond
+    (symbol? x) (symbol (clojure.string/lower-case (str x)))
+    :else x))
+
+(defn all-to-lowercase [l]
+  (cond
+    (igual? nil l) nil
+    (seq? l) (apply list (map all-to-lowercase l))
+    :else (symbol-to-lowercase l)))
+
+(defn amb-to-map [amb]
+  (into {} (map vec (partition 2 amb))))
+
+(defn map-to-amb [m]
+  (apply list (apply concat (map (fn [[x y]] (list x y)) m))))
+
+(defn modify-env [l amb-global amb-local]
+  (let [key (first l)
+        value (second l)
+        tuple (list key value)
+        next-l (rest (rest l))]
+    (cond
+    ;;errors
+      (nil? value) (list (list '*error* 'list 'expected nil) amb-global)
+      (igual? nil key) (list (list '*error* 'cannot-set nil) amb-global)
+      (not (symbol? key)) (list (list '*error* 'symbol 'expected key) amb-global)
+    ;;last tuple
+      (empty? next-l) (let [new-global (new-env tuple amb-global amb-local)]
+                        (evaluar (first new-global) (second new-global) amb-local))
+    ;;recursion call
+      :else (let [new-global (new-env tuple amb-global amb-local)]
+              (modify-env next-l (second new-global) amb-local)))))
+
+(defn new-env [l amb-global amb-local]
+  (let [eval (evaluar (second l) amb-global amb-local)]
+    (list (first eval) (actualizar-amb (second eval) (first l) (first eval)))))
+
+(defn null? [x]
+  (let [lower-x (clojure.string/lower-case (str x))]
+    (or (= "nil" lower-x) (= "()" lower-x) (= "" lower-x))))
 
 ; FUNCIONES QUE DEBEN SER IMPLEMENTADAS PARA COMPLETAR EL INTERPRETE DE TLC-LISP (ADEMAS DE COMPLETAR 'EVALUAR' Y 'APLICAR-FUNCION-PRIMITIVA'):
 
@@ -411,26 +454,21 @@
     (== (count l) n) n
     :else (list '*error* (if (< (count l) n) 'too-few-args 'too-many-args))))
 
-
 ;;Verifica la igualdad entre dos elementos al estilo de TLC-LISP (case-insensitive).
 (defn igual? [a b]
-  (letfn [(notEmptyList? [x] (and (list? x) (not (empty? x))))
-          (null? [x] (or (nil? x) (= 'NIL x) (= (concat) x)))]
-    (cond
-      ;; numeros
-      (and (number? a) (number? b)) (== a b)
-      ;; strings
-      ;;(and (string? a) (string? b)) 
-      ;; simbolos
-      (and (symbol? a) (symbol? b)) (= (map char (clojure.string/lower-case (str a)))
-                                       (map char (clojure.string/lower-case (str b))))
+  (letfn [(notEmptyList? [x] (and (seq? x) (not (empty? x))))]
+    (let [la (clojure.string/lower-case (str a))
+          lb (clojure.string/lower-case (str a))]
+      (cond
+        ;; nulos
+        (and (null? a) (null? b)) true
+        ;; numeros
+        (and (number? a) (number? b)) (== a b)
+      ;; simbolos 
+        (and (symbol? a) (symbol? b)) (= (symbol-to-lowercase a) (symbol-to-lowercase b))
       ;; listas no vacias
-      (and (notEmptyList? a) (notEmptyList? b)) (and
-                                                 (== (count a) (count b))
-                                                 (reduce #(and %1 %2) (map igual? a b)))
-      ;; nulos
-      (and (null? a) (null? b)) true
-      :else (= a b))))
+        (and (seq? a) (seq? b)) (and (== (count a) (count b)) (reduce #(and %1 %2) (map igual? a b)))
+        :else (= a b)))))
 
 ;;Devuelve true o false, segun sea o no el arg. un mensaje de error (una lista con *error* como primer elemento).
 (defn error? [l]
@@ -444,36 +482,35 @@
 (defn revisar-lae [l]
   (first (filter error? (map revisar-fnc l))))
 
-(defn amb-to-map [amb]
-  (into {} (map vec (partition 2 amb))))
-
-(defn map-to-amb [m]
-  (apply list (flatten (apply list m))))
-
 ;;Devuelve un ambiente actualizado con una clave (nombre de la variable o funcion) y su valor. 
 ;;Si el valor es un error, el ambiente no se modifica. De lo contrario, se le carga o reemplaza el valor.
 (defn actualizar-amb [amb k v]
-  (if (error? v)
-    amb
-    (map-to-amb (assoc (amb-to-map amb) k v))))
+  (let [lower-case-key (all-to-lowercase k)
+        amb-lower (all-to-lowercase amb)]
+    (if (error? v)
+      amb
+      (let [value-lower (all-to-lowercase v)]
+        (map-to-amb (assoc (amb-to-map amb-lower) lower-case-key value-lower))))))
 
 ;;Busca una clave en un ambiente (una lista con claves en las posiciones impares [1, 3, 5...] y valores en las pares [2, 4, 6...] 
 ;;y devuelve el valor asociado. Devuelve un mensaje de error si no la encuentra."
 (defn buscar [key amb]
-  (let [lower-case-key (symbol (clojure.string/lower-case (str key)))
-        value (get (amb-to-map amb) lower-case-key)
-        contains-key (contains? (amb-to-map amb) lower-case-key)]
-    (if (and (nil? value) (not contains-key)) (list '*error* 'unbound-symbol key) value)))
+  (let [lower-case-key (all-to-lowercase key)
+        amb-lower (all-to-lowercase amb)
+        value (get (amb-to-map amb-lower) lower-case-key)
+        value-lower (all-to-lowercase value)
+        contains-key (contains? (amb-to-map amb-lower) lower-case-key)]
+    (if (and (igual? nil value) (not contains-key)) (list '*error* 'unbound-symbol key) value-lower)))
 
 ;;Devuelve el resultado de fusionar 2 sublistas.
 (defn fnc-append [l]
-  (letfn [(notListNotNil? [x] (and (some? x) (not (list? x))))
+  (letfn [(notListNotNil? [x] (and (not (igual? nil x)) (not (seq? x))))
           (errorNotList [x] (list '*error* 'list 'expected x))]
     (cond
       (error? (controlar-aridad l 2)) (controlar-aridad l 2)
       (notListNotNil? (first l)) (errorNotList (first l))
       (notListNotNil? (second l)) (errorNotList (second l))
-      :else (let [concatLists (concat (first l) (second l))]
+      :else (let [concatLists (apply list (concat (first l) (second l)))]
               (if (empty? concatLists) nil concatLists)))))
 
 ;;Devuelve la fusion de los ambientes global y local.
@@ -483,7 +520,7 @@
     :else (list '*error* 'too-many-args)))
 
 ;;Compara 2 elementos. Si son iguales, devuelve t. Si no, nil.
-(defn fnc-equal [l]
+(defn fnc-equal [l] 
   (cond
     (error? (controlar-aridad l 2)) (controlar-aridad l 2)
     :else (if (igual? (first l) (second l)) 't nil)))
@@ -545,7 +582,7 @@
 (defn fnc-reverse [l]
   (cond
     (error? (controlar-aridad l 1)) (controlar-aridad l 1)
-    (list? (first l)) (reverse (first l))
+    (seq? (first l)) (reverse (first l))
     :else (list '*error* 'list 'expected (first l))))
 
 ;;Evalua una expresion escalar consultando, si corresponde, los ambientes local y global. Devuelve una lista con el resultado y un ambiente.
@@ -560,18 +597,17 @@
               :else (list value-global amb-global)))))
 
 ;;Evalua una forma 'de'. Devuelve una lista con el resultado y un ambiente actualizado con la definicion.
-(defn evaluar-de [de val]
+(defn evaluar-de [de amb]
   (let [param (second (rest de))
         fun (second de)]
     (cond
-      (not (list? param)) (list (list '*error* 'list 'expected param) val)
-      (nil? fun) (list (list '*error* 'cannot-set fun) val)
-      (not (symbol? fun)) (list (list '*error* 'symbol 'expected fun) val)
-      :else (let [key (first val)
-                  value (second val)
-                  body (rest (rest de))
-                  lambda-def (apply list (cons 'lambda body))]
-              (list fun (list key value fun lambda-def))))))
+      (not (list? param)) (list (list '*error* 'list 'expected param) amb)
+      (igual? nil fun) (list (list '*error* 'cannot-set fun) amb)
+      (not (symbol? fun)) (list (list '*error* 'symbol 'expected fun) amb)
+      :else (let [body (rest (rest de))
+                  lambda-def (apply list (cons 'lambda body))
+                  fun-lower-case (all-to-lowercase fun)]
+              (list fun-lower-case (actualizar-amb amb fun lambda-def))))))
 
 ;;Evalua una forma 'if'. Devuelve una lista con el resultado y un ambiente eventualmente modificado.
 (defn evaluar-if [expre amb-global amb-local]
@@ -580,42 +616,28 @@
         second-body (drop 3 expre)
         t-side (first body)
         f-side (last (rest body))
-        evaluation (evaluar condition amb-global amb-local)] 
-      (cond
-        (error? (first evaluation)) evaluation
-        (nil? (first evaluation)) (evaluar f-side amb-global amb-local)
-        :else (evaluar t-side amb-global amb-local))))
+        evaluation (evaluar condition amb-global amb-local)]
+    (cond
+      (error? (first evaluation)) evaluation
+      (igual? nil (first evaluation)) (evaluar f-side amb-global amb-local)
+      :else (evaluar t-side amb-global amb-local))))
+
+(defn evaluar-until-nil[l amb-global amb-local] 
+  (cond
+    (empty? l) (list nil amb-global)
+    :else (let [eval (evaluar (first l) amb-global amb-local)]
+            (if (not (igual? (first eval) nil)) 
+              eval
+              (evaluar-until-nil (rest l) (second eval) amb-local)))))
 
 ;;Evalua una forma 'or'. Devuelve una lista con el resultado y un ambiente.
 (defn evaluar-or [expre amb-global amb-local]
-  (let [body (rest expre)
-        value (first (filter some? body))]
-    (evaluar value amb-global amb-local)))
-
-(defn modify-env [l amb-global amb-local] 
-  (let [key (first l)
-        value (second l)
-        tuple (list key value)
-        next-l (rest (rest l))]
-  (cond
-    ;;errors
-    (nil? value) (list (list '*error* 'list 'expected nil) amb-global)
-    (nil? key) (list (list '*error* 'cannot-set nil) amb-global)
-    (not (symbol? key)) (list (list '*error* 'symbol 'expected key) amb-global)
-    ;;last tuple
-    (empty? next-l) (let [new-global (new-env tuple amb-global amb-local)]
-                      (evaluar (first new-global) (second new-global) amb-local))
-    ;;recursion call
-    :else (let [new-global (new-env tuple amb-global amb-local)]
-            (modify-env next-l (second new-global) amb-local)))))
-
-(defn new-env [l amb-global amb-local]
-  (let [eval (evaluar (second l) amb-global amb-local)]
-        (list (first eval) (actualizar-amb (second eval) (first l) (first eval)))))
+  (let [body (all-to-lowercase (rest expre))] 
+    (evaluar-until-nil body (all-to-lowercase amb-global) (all-to-lowercase amb-local))))
 
 ;;Evalua una forma 'setq'. Devuelve una lista con el resultado y un ambiente actualizado.
 (defn evaluar-setq [expre amb-global amb-local]
-  (let [body (rest expre)] 
-    (modify-env body amb-global amb-local)))
+  (let [body (all-to-lowercase (rest expre))]
+    (modify-env body (all-to-lowercase amb-global) (all-to-lowercase amb-local))))
 
 ;; ; Al terminar de cargar el archivo en el REPL de Clojure (con load-file), se debe devolver true.

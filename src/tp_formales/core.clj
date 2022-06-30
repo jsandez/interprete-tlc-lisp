@@ -506,11 +506,10 @@
 ;;y devuelve el valor asociado. Devuelve un mensaje de error si no la encuentra."
 (defn buscar [key amb]
   (let [lower-case-key (all-to-lowercase key)
-        amb-lower (all-to-lowercase amb)
-        value (get (amb-to-map amb-lower) lower-case-key)
-        value-lower (all-to-lowercase value)
-        contains-key (contains? (amb-to-map amb-lower) lower-case-key)]
-    (if (and (igual? nil value) (not contains-key)) (list '*error* 'unbound-symbol key) value-lower)))
+        amb-map (amb-to-map amb)
+        value (get amb-map lower-case-key)
+        contains-key (contains? amb-map lower-case-key)]
+    (if (and (igual? nil value) (not contains-key)) (list '*error* 'unbound-symbol key) value)))
 
 ;;Devuelve el resultado de fusionar 2 sublistas.
 (defn fnc-append [l]
